@@ -1,7 +1,27 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
-import * as tf from '@tensorflow/tfjs';
 import { Line } from 'react-chartjs-2';
+import { WeatherPredictor, WeatherDataPoint } from './models/weatherModel';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend
+} from 'chart.js';
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend
+);
 
 interface WeatherData {
   name: string;
@@ -23,17 +43,34 @@ const App: React.FC = () => {
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
   const [recommendation, setRecommendation] = useState<string>('');
   const [prediction, setPrediction] = useState<number[]>([]);
+  const [historicalData, setHistoricalData] = useState<WeatherDataPoint[]>([]);
+  const weatherPredictor = useRef<WeatherPredictor>(new WeatherPredictor());
 
   const apiKey = "c595615a29198a33ff51ff32b5ec4919";
   const apiUrl = "https://api.openweathermap.org/data/2.5/weather?&units=metric&q=";
 
-  // Simple AI model for temperature prediction
-  const createPredictionModel = () => {
-    const model = tf.sequential();
-    model.add(tf.layers.dense({ units: 1, inputShape: [1] }));
-    model.compile({ loss: 'meanSquaredError', optimizer: 'sgd' });
-    return model;
-  };
+  useEffect(() => {
+    // Simulate historical data for training
+    const generateHistoricalData = () => {
+      const data: WeatherDataPoint[] = [];
+      for (let i = 0; i < 100; i++) {
+        data.push({
+          temperature: 20 + Math.random() * 10,
+          humidity: 50 + Math.random() * 30,
+          windSpeed: 5 + Math.random() * 10
+        });
+      }
+      return data;
+    };
+
+    const initializeModel = async () => {
+      const historicalData = generateHistoricalData();
+      setHistoricalData(historicalData);
+      await weatherPredictor.current.trainModel(historicalData);
+    };
+
+    initializeModel();
+  }, []);
 
   const getClothingRecommendation = (temp: number, weather: string) => {
     if (temp < 10) return "Heavy coat, scarf, and warm layers recommended";
@@ -53,12 +90,16 @@ const App: React.FC = () => {
       );
       setRecommendation(recommendation);
 
-      // Simple temperature prediction for next 5 hours
-      const currentTemp = response.data.main.temp;
-      const predictions = Array.from({ length: 5 }, (_, i) => 
-        currentTemp + Math.sin(i / 5) * 2
-      );
+      // Get ML predictions
+      const currentData: WeatherDataPoint = {
+        temperature: response.data.main.temp,
+        humidity: response.data.main.humidity,
+        windSpeed: response.data.wind.speed
+      };
+
+      const predictions = weatherPredictor.current.predict(currentData);
       setPrediction(predictions);
+
     } catch (error) {
       console.error('Error fetching weather data:', error);
     }
@@ -105,7 +146,7 @@ const App: React.FC = () => {
             </div>
 
             <div className="mt-6">
-              <h3 className="text-lg font-semibold">Temperature Prediction:</h3>
+              <h3 className="text-lg font-semibold">ML Temperature Prediction:</h3>
               <Line
                 data={{
                   labels: ['1h', '2h', '3h', '4h', '5h'],
